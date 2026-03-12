@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { RefreshCw, GraduationCap, Award, Target, ChevronRight, Search, ChevronDown } from 'lucide-react'
+import { RefreshCw, GraduationCap, Award, Target, ChevronRight, Search, ChevronDown, ShieldCheck } from 'lucide-react'
 import { EmployeeAvatar } from '@/components/ui/employee-avatar'
 
 interface EmployeeRow {
@@ -12,80 +12,87 @@ interface EmployeeRow {
   contract_type: string | null
   practice_id: string | null
   practice_name: string | null
-  trainings: number
-  certifications: number
-  goals: number
+  trainings: number | null
+  certifications: number | null
+  goals: number | null
+  company_trainings: number | null
+  last_synced_at: string | null
 }
 
-const CACHE_KEY = 'trainings_certs_cache_v2'
-const CACHE_TTL_MS = 5 * 60 * 1000
-
-function loadCache(): { data: EmployeeRow[]; ts: number } | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = sessionStorage.getItem(CACHE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    if (Date.now() - parsed.ts > CACHE_TTL_MS) return null
-    return parsed
-  } catch {
-    return null
-  }
-}
-
-function saveCache(data: EmployeeRow[]) {
-  try {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() }))
-  } catch {}
+function formatSyncTime(iso: string | null): string {
+  if (!iso) return 'Never synced'
+  const d = new Date(iso)
+  return d.toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
 }
 
 export default function TrainingsCertsPage() {
   const router = useRouter()
   const [employees, setEmployees] = useState<EmployeeRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+  const [syncProgress, setSyncProgress] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [practiceFilter, setPracticeFilter] = useState<string>('all')
   const [fteOnly, setFteOnly] = useState(false)
   const [practiceDropdownOpen, setPracticeDropdownOpen] = useState(false)
 
-  async function load(force = false) {
-    if (!force) {
-      const cached = loadCache()
-      if (cached) {
-        setEmployees(cached.data)
-        setLastUpdated(new Date(cached.ts))
-        setLoading(false)
-        return
-      }
-    }
+  async function loadStats(): Promise<boolean> {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/bamboohr/trainings-summary')
-      if (!res.ok) throw new Error('Failed to load training data')
-      const data = await res.json()
-      const list: EmployeeRow[] = data.employees ?? []
-      setEmployees(list)
-      saveCache(list)
-      setLastUpdated(new Date())
+      const res = await fetch('/api/trainings-certs/stats')
+      if (!res.ok) throw new Error('Failed to load stats')
+      const json = await res.json()
+      const emps: EmployeeRow[] = json.employees ?? []
+      setEmployees(emps)
+      setLastSyncedAt(json.last_synced_at ?? null)
+      // return true if DB has data
+      return emps.some(e => e.trainings !== null)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Unknown error')
+      return false
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => { load() }, [])
+  async function runSync() {
+    setSyncing(true)
+    setSyncProgress('Fetching from BambooHR & KnowBe4…')
+    setError(null)
+    try {
+      const res = await fetch('/api/trainings-certs/sync', { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Sync failed')
+      setSyncProgress(`Synced ${json.synced} employees`)
+      await loadStats()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Sync failed')
+    } finally {
+      setSyncing(false)
+      setSyncProgress('')
+    }
+  }
 
-  // Derive sorted, unique practices from the loaded data
+  useEffect(() => {
+    loadStats().then(hasExistingData => {
+      // Auto-sync on first visit if DB is empty
+      if (!hasExistingData) {
+        runSync()
+      }
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const practices = useMemo(() => {
     const map = new Map<string, string>()
     for (const e of employees) {
-      if (e.practice_id && e.practice_name) {
-        map.set(e.practice_id, e.practice_name)
-      }
+      if (e.practice_id && e.practice_name) map.set(e.practice_id, e.practice_name)
     }
     return Array.from(map.entries())
       .map(([id, name]) => ({ id, name }))
@@ -99,69 +106,84 @@ export default function TrainingsCertsPage() {
     return true
   }), [employees, search, practiceFilter, fteOnly])
 
-  const totalTrainings = filtered.reduce((s, e) => s + e.trainings, 0)
-  const totalCerts = filtered.reduce((s, e) => s + e.certifications, 0)
-  const totalGoals = filtered.reduce((s, e) => s + e.goals, 0)
+  const totalTrainings = filtered.reduce((s, e) => s + (e.trainings ?? 0), 0)
+  const totalCerts = filtered.reduce((s, e) => s + (e.certifications ?? 0), 0)
+  const totalGoals = filtered.reduce((s, e) => s + (e.goals ?? 0), 0)
+  const totalKb4 = filtered.reduce((s, e) => s + (e.company_trainings ?? 0), 0)
 
   const selectedPracticeName = practiceFilter === 'all'
     ? 'All Practices'
     : (practices.find(p => p.id === practiceFilter)?.name ?? 'All Practices')
 
+  const hasData = employees.some(e => e.trainings !== null)
+
   return (
     <div className="space-y-6">
       {/* Header row */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-sm text-muted-foreground pt-1">
           {filtered.length} employee{filtered.length !== 1 ? 's' : ''}
           {employees.length !== filtered.length && ` (of ${employees.length})`}
-          {lastUpdated && (
-            <span className="ml-2 text-xs">· Last updated {lastUpdated.toLocaleTimeString()}</span>
-          )}
         </p>
-        <button
-          onClick={() => load(true)}
-          disabled={loading}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-card border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            onClick={runSync}
+            disabled={syncing || loading}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-card border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Syncing…' : 'Refresh'}
+          </button>
+          <p className="text-[11px] text-muted-foreground/60 text-right">
+            {syncing && syncProgress
+              ? syncProgress
+              : `Last sync: ${formatSyncTime(lastSyncedAt)}`}
+          </p>
+        </div>
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-card border border-border rounded-xl p-5 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-lg bg-blue-100 dark:bg-blue-950/40 flex items-center justify-center flex-shrink-0">
-            <GraduationCap className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-950/40 flex items-center justify-center flex-shrink-0">
+            <GraduationCap className="w-4 h-4 text-blue-600 dark:text-blue-400" />
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Total Trainings</p>
-            <p className="text-2xl font-bold text-foreground">{totalTrainings}</p>
+            <p className="text-xs text-muted-foreground">Trainings</p>
+            <p className="text-xl font-bold text-foreground">{totalTrainings}</p>
           </div>
         </div>
-        <div className="bg-card border border-border rounded-xl p-5 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-lg bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center flex-shrink-0">
-            <Award className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+        <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center flex-shrink-0">
+            <Award className="w-4 h-4 text-amber-600 dark:text-amber-400" />
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Total Certifications</p>
-            <p className="text-2xl font-bold text-foreground">{totalCerts}</p>
+            <p className="text-xs text-muted-foreground">Certifications</p>
+            <p className="text-xl font-bold text-foreground">{totalCerts}</p>
           </div>
         </div>
-        <div className="bg-card border border-border rounded-xl p-5 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-lg bg-emerald-100 dark:bg-emerald-950/40 flex items-center justify-center flex-shrink-0">
-            <Target className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+        <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-emerald-100 dark:bg-emerald-950/40 flex items-center justify-center flex-shrink-0">
+            <Target className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Total Goals</p>
-            <p className="text-2xl font-bold text-foreground">{totalGoals}</p>
+            <p className="text-xs text-muted-foreground">Goals</p>
+            <p className="text-xl font-bold text-foreground">{totalGoals}</p>
+          </div>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-rose-100 dark:bg-rose-950/40 flex items-center justify-center flex-shrink-0">
+            <ShieldCheck className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Company Trainings</p>
+            <p className="text-xl font-bold text-foreground">{totalKb4}</p>
           </div>
         </div>
       </div>
 
       {/* Filters row */}
       <div className="flex flex-wrap items-center gap-3">
-        {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
@@ -173,7 +195,6 @@ export default function TrainingsCertsPage() {
           />
         </div>
 
-        {/* Practice combobox */}
         <div className="relative">
           <button
             onClick={() => setPracticeDropdownOpen(v => !v)}
@@ -203,7 +224,6 @@ export default function TrainingsCertsPage() {
           )}
         </div>
 
-        {/* FTE toggle */}
         <button
           onClick={() => setFteOnly(v => !v)}
           className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
@@ -223,11 +243,12 @@ export default function TrainingsCertsPage() {
         </div>
       )}
 
-      {loading && employees.length === 0 ? (
+      {loading || (syncing && !hasData) ? (
         <div className="bg-card border border-border rounded-xl p-16 flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-[#ea2775] border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-muted-foreground">Loading training data from BambooHR…</p>
-          <p className="text-xs text-muted-foreground">This may take a moment for all employees</p>
+          <p className="text-sm text-muted-foreground">
+            {syncing ? 'Syncing data from BambooHR & KnowBe4…' : 'Loading…'}
+          </p>
         </div>
       ) : (
         <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -246,13 +267,19 @@ export default function TrainingsCertsPage() {
                   <th className="text-center px-4 py-3 font-medium text-muted-foreground">
                     <div className="flex items-center justify-center gap-1.5">
                       <Award className="w-3.5 h-3.5" />
-                      Certifications
+                      Certs
                     </div>
                   </th>
                   <th className="text-center px-4 py-3 font-medium text-muted-foreground">
                     <div className="flex items-center justify-center gap-1.5">
                       <Target className="w-3.5 h-3.5" />
                       Goals
+                    </div>
+                  </th>
+                  <th className="text-center px-4 py-3 font-medium text-muted-foreground">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-rose-400" />
+                      Company
                     </div>
                   </th>
                   <th className="text-center px-4 py-3 font-medium text-muted-foreground">Details</th>
@@ -270,7 +297,7 @@ export default function TrainingsCertsPage() {
                         <div>
                           <span className="font-medium text-foreground">{emp.full_name}</span>
                           {emp.contract_type && (
-                            <span className={`ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold rounded-full ${
+                            <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded-full ${
                               emp.contract_type === 'FTE'
                                 ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
                                 : 'bg-[#ea2775]/10 text-[#ea2775]'
@@ -285,31 +312,16 @@ export default function TrainingsCertsPage() {
                       {emp.practice_name ?? '—'}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {emp.trainings > 0 ? (
-                        <span className="inline-flex items-center justify-center min-w-[32px] h-7 rounded-full text-xs font-semibold px-2.5 bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
-                          {emp.trainings}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground/40">—</span>
-                      )}
+                      <CountBadge value={emp.trainings} color="blue" />
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {emp.certifications > 0 ? (
-                        <span className="inline-flex items-center justify-center min-w-[32px] h-7 rounded-full text-xs font-semibold px-2.5 bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                          {emp.certifications}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground/40">—</span>
-                      )}
+                      <CountBadge value={emp.certifications} color="amber" />
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {emp.goals > 0 ? (
-                        <span className="inline-flex items-center justify-center min-w-[32px] h-7 rounded-full text-xs font-semibold px-2.5 bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-                          {emp.goals}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground/40">—</span>
-                      )}
+                      <CountBadge value={emp.goals} color="emerald" />
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <CountBadge value={emp.company_trainings} color="rose" />
                     </td>
                     <td className="px-4 py-3 text-center">
                       <button
@@ -322,9 +334,9 @@ export default function TrainingsCertsPage() {
                     </td>
                   </tr>
                 ))}
-                {filtered.length === 0 && !loading && (
+                {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground text-sm">
+                    <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground text-sm">
                       No employees match the selected filters.
                     </td>
                   </tr>
@@ -335,5 +347,21 @@ export default function TrainingsCertsPage() {
         </div>
       )}
     </div>
+  )
+}
+
+function CountBadge({ value, color }: { value: number | null; color: 'blue' | 'amber' | 'emerald' | 'rose' }) {
+  if (value === null) return <span className="text-muted-foreground/30 text-xs">—</span>
+  if (value === 0) return <span className="text-muted-foreground/40">—</span>
+  const cls = {
+    blue: 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
+    amber: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+    emerald: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
+    rose: 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300',
+  }[color]
+  return (
+    <span className={`inline-flex items-center justify-center min-w-[28px] h-6 rounded-full text-xs font-semibold px-2 ${cls}`}>
+      {value}
+    </span>
   )
 }

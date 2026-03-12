@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Save, Eye, EyeOff, RefreshCw, Plug, TreePalm, Users, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
+import { Save, Eye, EyeOff, RefreshCw, Plug, TreePalm, Users, CheckCircle2, XCircle, Loader2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface Settings {
@@ -12,6 +12,7 @@ interface Settings {
   BAMBOO_API_KEY: string
   BAMBOO_SUBDOMAIN: string
   WORKABLE_API_TOKEN: string
+  KNOWBE4_API_TOKEN: string
 }
 
 const DEFAULT: Settings = {
@@ -22,6 +23,7 @@ const DEFAULT: Settings = {
   BAMBOO_API_KEY: '',
   BAMBOO_SUBDOMAIN: '',
   WORKABLE_API_TOKEN: '',
+  KNOWBE4_API_TOKEN: '',
 }
 
 type ConnStatus = 'idle' | 'testing' | 'ok' | 'error'
@@ -70,6 +72,8 @@ export default function SettingsPage() {
   const [bambooInfo, setBambooInfo] = useState('')
   const [workableStatus, setWorkableStatus] = useState<ConnStatus>('idle')
   const [workableAccounts, setWorkableAccounts] = useState<{ name: string; subdomain: string }[]>([])
+  const [kb4Status, setKb4Status] = useState<ConnStatus>('idle')
+  const [kb4Info, setKb4Info] = useState('')
 
   const testJira = async () => {
     setJiraStatus('testing')
@@ -143,6 +147,25 @@ export default function SettingsPage() {
     } catch (e) {
       setWorkableStatus('error')
       toast.error(e instanceof Error ? e.message : 'Workable connection failed')
+    }
+  }
+
+  const testKb4 = async () => {
+    setKb4Status('testing')
+    try {
+      const res = await fetch('/api/knowbe4/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: values.KNOWBE4_API_TOKEN }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) throw new Error(data.error ?? 'Connection failed')
+      setKb4Info(data.name ? `Connected to ${data.name}` : 'Connected to KnowBe4')
+      setKb4Status('ok')
+      toast.success('KnowBe4 connection successful')
+    } catch (e) {
+      setKb4Status('error')
+      toast.error(e instanceof Error ? e.message : 'KnowBe4 connection failed')
     }
   }
 
@@ -334,6 +357,41 @@ export default function SettingsPage() {
               <span className="text-xs text-muted-foreground">
                 {workableAccounts.map(a => a.name).join(', ')}
               </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* KnowBe4 */}
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-border bg-muted/30">
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-rose-500/10">
+            <ShieldCheck className="w-4 h-4 text-rose-500" />
+          </div>
+          <div className="flex-1">
+            <h2 className="text-sm font-semibold text-foreground">KnowBe4 Integration</h2>
+            <p className="text-xs text-muted-foreground">Reporting API token for KnowBe4 security awareness training</p>
+          </div>
+          <StatusBadge status={kb4Status} />
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <Field
+            label="Reporting API Token"
+            value={values.KNOWBE4_API_TOKEN}
+            placeholder="eyJhbGci..."
+            secret
+            show={!!showTokens['KNOWBE4_API_TOKEN']}
+            onToggleShow={() => toggle('KNOWBE4_API_TOKEN')}
+            onChange={v => { setValues(prev => ({ ...prev, KNOWBE4_API_TOKEN: v })); setKb4Status('idle') }}
+          />
+          <div className="flex items-center gap-3">
+            <TestButton
+              status={kb4Status}
+              disabled={!values.KNOWBE4_API_TOKEN}
+              onClick={testKb4}
+            />
+            {kb4Status === 'ok' && kb4Info && (
+              <span className="text-xs text-muted-foreground">{kb4Info}</span>
             )}
           </div>
         </div>
