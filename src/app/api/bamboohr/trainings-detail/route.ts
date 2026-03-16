@@ -37,7 +37,7 @@ const TRAINING_FIELDS: Record<string, string> = {
   '4579': 'PL-400: preparation via ESI',
   '4577': 'PL-600: Microsoft Power Platform Solution Architect',
   '4578': 'PL-600: preparation via ESI',
-  '4616': 'QMS DEMO',
+  '4616': 'Quality Management System',
   '4531': 'TKW Security ISMS',
 }
 
