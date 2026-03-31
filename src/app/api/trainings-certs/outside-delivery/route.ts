@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isValidDate } from '@/lib/training-utils'
 
-// ── BambooHR ──────────────────────────────────────────────────────────────────
 const TRAINING_FIELD_IDS = [
   '4575','4576','4613','4532','4588','4587',
   '4524','4525','4519','4520','4529','4528',
@@ -22,8 +21,30 @@ function bambooAuth() {
   }
 }
 
+interface BambooDirectoryEmployee {
+  id: string
+  displayName: string
+  department: string | null
+  jobTitle: string | null
+  workEmail: string | null
+}
 
-// Returns map of bambooId → training count
+async function fetchBambooDirectory(base: string, auth: string): Promise<BambooDirectoryEmployee[]> {
+  const res = await fetch(`${base}/employees/directory`, {
+    headers: { Authorization: auth, Accept: 'application/json' },
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`BambooHR directory returned ${res.status}`)
+  const data = await res.json()
+  return (data.employees ?? []).map((e: Record<string, unknown>) => ({
+    id: String(e.id),
+    displayName: String(e.displayName ?? ''),
+    department: (e.department as string) || null,
+    jobTitle: (e.jobTitle as string) || null,
+    workEmail: (e.workEmail as string) || null,
+  }))
+}
+
 async function fetchBulkTrainingReport(base: string, auth: string): Promise<Map<string, number>> {
   const body = JSON.stringify({ title: 'Training Sync', fields: TRAINING_FIELD_IDS })
   const res = await fetch(`${base}/reports/custom?format=json`, {
@@ -46,7 +67,6 @@ async function fetchBulkTrainingReport(base: string, auth: string): Promise<Map<
   return map
 }
 
-// Returns map of bambooId → workEmail
 async function fetchWorkEmails(base: string, auth: string): Promise<Map<string, string>> {
   const body = JSON.stringify({ title: 'Email Sync', fields: ['workEmail'] })
   const res = await fetch(`${base}/reports/custom?format=json`, {
@@ -85,10 +105,8 @@ async function fetchGoalCount(base: string, auth: string, bambooId: string): Pro
   return list.length
 }
 
-// ── KnowBe4 ───────────────────────────────────────────────────────────────────
 const KB4_BASE = 'https://eu.api.knowbe4.com/v1'
 
-// Returns map of lowercase email → enrollment count
 async function fetchKb4EnrollmentCounts(): Promise<Map<string, number>> {
   const token = process.env.KNOWBE4_API_TOKEN
   if (!token) return new Map()
@@ -112,8 +130,7 @@ async function fetchKb4EnrollmentCounts(): Promise<Map<string, number>> {
   return map
 }
 
-// ── Main sync handler ─────────────────────────────────────────────────────────
-export async function POST() {
+export async function GET() {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -122,70 +139,67 @@ export async function POST() {
   try {
     const { base, auth } = bambooAuth()
 
-    // Fetch employees + BambooHR bulk data + KnowBe4 all in parallel
+    // Fetch everything in parallel
     const [
-      { data: employees, error: empError },
+      bambooEmployees,
+      { data: supabaseEmps, error },
       trainingMap,
       emailMap,
       kb4Map,
     ] = await Promise.all([
-      supabase
-        .from('employees')
-        .select('id, bamboo_id')
-        .not('bamboo_id', 'is', null)
-        .eq('status', 'Active'),
+      fetchBambooDirectory(base, auth),
+      supabase.from('employees').select('bamboo_id').not('bamboo_id', 'is', null),
       fetchBulkTrainingReport(base, auth),
       fetchWorkEmails(base, auth),
       fetchKb4EnrollmentCounts(),
     ])
 
-    if (empError) throw empError
-    const empList = employees ?? []
+    if (error) throw error
 
-    // Fetch certs + goals per employee in batches of 10
+    const knownIds = new Set((supabaseEmps ?? []).map(e => String(e.bamboo_id)))
+
+    const outsideEmployees = bambooEmployees
+      .filter(e => e.displayName && !knownIds.has(e.id))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName))
+
+    // Fetch cert + goal counts per outside-delivery employee in batches of 10
     const BATCH = 10
-    const upsertRows: Array<{
-      employee_id: string
+    const results: Array<{
+      bamboo_id: string
+      full_name: string
+      department: string | null
+      job_title: string | null
       trainings: number
       certifications: number
       goals: number
       company_trainings: number
-      last_synced_at: string
     }> = []
 
-    const now = new Date().toISOString()
-
-    for (let i = 0; i < empList.length; i += BATCH) {
-      const batch = empList.slice(i, i + BATCH)
-      const results = await Promise.all(
+    for (let i = 0; i < outsideEmployees.length; i += BATCH) {
+      const batch = outsideEmployees.slice(i, i + BATCH)
+      const batchResults = await Promise.all(
         batch.map(async emp => {
-          const bambooId = emp.bamboo_id!
           const [certifications, goals] = await Promise.all([
-            fetchCertCount(base, auth, bambooId),
-            fetchGoalCount(base, auth, bambooId),
+            fetchCertCount(base, auth, emp.id),
+            fetchGoalCount(base, auth, emp.id),
           ])
-          const workEmail = emailMap.get(bambooId)?.toLowerCase() ?? ''
+          const workEmail = emailMap.get(emp.id)?.toLowerCase() ?? ''
           return {
-            employee_id: emp.id,
-            trainings: trainingMap.get(bambooId) ?? 0,
+            bamboo_id: emp.id,
+            full_name: emp.displayName,
+            department: emp.department,
+            job_title: emp.jobTitle,
+            trainings: trainingMap.get(emp.id) ?? 0,
             certifications,
             goals,
             company_trainings: workEmail ? (kb4Map.get(workEmail) ?? 0) : 0,
-            last_synced_at: now,
           }
         })
       )
-      upsertRows.push(...results)
+      results.push(...batchResults)
     }
 
-    // Upsert all rows
-    const { error: upsertError } = await supabase
-      .from('employee_training_stats')
-      .upsert(upsertRows, { onConflict: 'employee_id' })
-
-    if (upsertError) throw upsertError
-
-    return NextResponse.json({ success: true, synced: upsertRows.length, synced_at: now })
+    return NextResponse.json({ employees: results })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.json({ error: message }, { status: 500 })

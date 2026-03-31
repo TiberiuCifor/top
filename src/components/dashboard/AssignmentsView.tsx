@@ -75,10 +75,12 @@ const statusColors: Record<string, string> = {
   }, [assignments])
 
   const filteredAssignments = assignments.filter(a => {
+    if (a.employee?.status !== 'Active') return false
+
     const matchesSearch = a.employee?.full_name.toLowerCase().includes(search.toLowerCase()) ||
       a.project?.name.toLowerCase().includes(search.toLowerCase()) ||
       a.role_on_project?.toLowerCase().includes(search.toLowerCase())
-    
+
     const matchesProject = projectFilter === 'all' || a.project_id === projectFilter
     const matchesEmployee = employeeFilter === 'all' || a.employee_id === employeeFilter
     const matchesStatus = statusFilter === 'all' || a.status === statusFilter

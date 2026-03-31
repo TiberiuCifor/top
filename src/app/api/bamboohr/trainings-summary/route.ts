@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isValidDate } from '@/lib/training-utils'
 
 // Training completion fields in BambooHR (individual date fields on employee records).
 // A field with a non-null, non-zero date means the employee completed that training.
@@ -24,9 +25,6 @@ function bambooAuth() {
   }
 }
 
-function isValidDate(d: string | null | undefined) {
-  return d && d !== '0000-00-00' && d !== ''
-}
 
 async function fetchBulkTrainingReport(base: string, auth: string): Promise<Map<string, number>> {
   const body = JSON.stringify({ title: 'Training Summary', fields: TRAINING_FIELD_IDS })

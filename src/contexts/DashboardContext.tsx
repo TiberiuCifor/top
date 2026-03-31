@@ -10,6 +10,8 @@ interface DashboardContextValue {
   isProjectLead: boolean
   isItSupport: boolean
   isLeadership: boolean
+  isSales: boolean
+  isPracticeLead: boolean
   newRemindersCount: number
   benchCount: number
   ready: boolean
@@ -74,8 +76,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
             supabase
               .from('assignments')
               .select('employee_id, project:projects!inner(name), employee:employees!inner(status)')
-              .lte('start_date', new Date().toISOString())
-              .or(`end_date.is.null,end_date.gte.${new Date().toISOString()}`),
+              .eq('status', 'active'),
             supabase
               .from('reminders')
               .select('id', { count: 'exact' })
@@ -88,7 +89,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
           if (benchResult.status === 'fulfilled' && benchResult.value.data) {
             const benchEmployeeIds = new Set(
               benchResult.value.data
-                .filter((a: any) => a.project?.name?.toLowerCase() === 'bench' && a.employee?.status !== 'Inactive')
+                .filter((a: any) => a.project?.name?.toLowerCase() === 'bench' && a.employee?.status === 'Active')
                 .map((a: any) => a.employee_id)
             )
             setBenchCount(benchEmployeeIds.size)
@@ -143,17 +144,21 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const isProjectLead = currentUser?.role === 'project_lead'
   const isItSupport = currentUser?.role === 'user'
   const isLeadership = currentUser?.role === 'leadership' || currentUser?.role === 'admin'
+  const isSales = currentUser?.role === 'sales'
+  const isPracticeLead = currentUser?.role === 'practice_lead'
 
   const value = useMemo(() => ({
     currentUser,
     isProjectLead,
     isItSupport,
     isLeadership,
+    isSales,
+    isPracticeLead,
     newRemindersCount,
     benchCount,
     ready,
     handleLogout,
-  }), [currentUser, isProjectLead, isItSupport, isLeadership, newRemindersCount, benchCount, ready, handleLogout])
+  }), [currentUser, isProjectLead, isItSupport, isLeadership, isSales, isPracticeLead, newRemindersCount, benchCount, ready, handleLogout])
 
   return (
     <DashboardContext.Provider value={value}>

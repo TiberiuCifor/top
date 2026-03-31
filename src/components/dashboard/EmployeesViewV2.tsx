@@ -23,6 +23,7 @@ import {
   Plus, Search, MoreHorizontal, Pencil, Trash2, User, Briefcase, ExternalLink,
   Filter, Layers, ChevronDown, ChevronRight, FolderKanban, MessageSquare,
   CalendarPlus, History, Users, UserCheck, TrendingDown, ArrowUpDown, ArrowUp, ArrowDown, Star,
+  CalendarDays, Clock,
 } from 'lucide-react'
 import { SkillsModal } from '@/components/modals/SkillsModal'
 import { EmployeeAvatar } from '@/components/ui/employee-avatar'
@@ -44,7 +45,7 @@ interface EmployeesViewV2Props {
   onAddRole: () => void
   onEditRole: (role: Role) => void
   onDeleteRole: (id: string) => void
-  onSaveAssignment: (data: AssignmentInput) => Promise<void>
+  onSaveAssignment: (data: AssignmentInput, assignmentId?: string) => Promise<void>
   onDeleteAssignment?: (id: string) => void
   initialGroupBy?: GroupingMode
   initialExpandedGroup?: string
@@ -131,9 +132,20 @@ export function EmployeesViewV2({
   }, [assignments])
 
   const employeeAllocationMap = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
     const map = new Map<string, number>()
     assignments.forEach((assignment) => {
       if (!assignment.employee_id || assignment.status !== 'active') return
+      if (assignment.project?.name?.toLowerCase() === 'bench') return
+      const start = new Date(assignment.start_date)
+      start.setHours(0, 0, 0, 0)
+      if (start > today) return  // not started yet
+      if (assignment.end_date) {
+        const end = new Date(assignment.end_date)
+        end.setHours(23, 59, 59, 999)
+        if (end < today) return  // already ended
+      }
       const current = map.get(assignment.employee_id) || 0
       map.set(assignment.employee_id, current + assignment.allocation_percentage)
     })
@@ -324,6 +336,7 @@ export function EmployeesViewV2({
   const renderEmployeeRow = (employee: Employee) => {
     const roleName = employee.role_data?.name || employee.role
     const prjs = employeeProjectsMap.get(employee.id) || []
+    const displayProjs = prjs
     const totalAllocation = employeeAllocationMap.get(employee.id) || 0
     const updateInfo = updatesByEmployee.get(employee.id)
     const hasUpdates = !!updateInfo && updateInfo.count > 0
@@ -390,13 +403,17 @@ export function EmployeesViewV2({
           </div>
         </td>
         <td className="px-4 py-3">
-          {prjs.length ? (
-            <div className="flex flex-wrap gap-1">
-              {prjs.map((projectName) => {
+          {displayProjs.length ? (
+            <div className="flex flex-col gap-1">
+              {displayProjs.map((projectName) => {
                 const employeeAssignment = assignments.find(
                   a => a.employee_id === employee.id && a.project?.name === projectName && a.status === 'active'
                 )
                 const isBench = projectName.toLowerCase() === 'bench'
+                const dateLabel = isBench ? 'since' : 'ends'
+                const dateValue = isBench
+                  ? (employeeAssignment?.start_date ? new Date(employeeAssignment.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null)
+                  : (employeeAssignment?.end_date ? new Date(employeeAssignment.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null)
                 return (
                   <button
                     key={projectName}
@@ -405,13 +422,27 @@ export function EmployeesViewV2({
                         setAssignmentModal({ open: true, employeeId: null, assignment: employeeAssignment })
                       }
                     }}
-                    className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-md transition-colors ${
+                    className={`flex flex-col items-start gap-0.5 px-2.5 py-1.5 rounded-lg border transition-colors w-fit text-left ${
                       isBench
-                        ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-400 dark:hover:bg-rose-950/60'
-                        : 'bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/40 dark:text-violet-400 dark:hover:bg-violet-950/60'
+                        ? 'bg-rose-50 border-rose-200 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-800/60 dark:hover:bg-rose-950/70'
+                        : 'bg-blue-50 border-blue-200 hover:bg-blue-100 dark:bg-blue-950/40 dark:border-blue-800/60 dark:hover:bg-blue-950/70'
                     }`}
                   >
-                    {projectName}
+                    <span className={`text-[11px] font-semibold leading-tight flex items-center gap-1 ${isBench ? 'text-rose-700 dark:text-rose-400' : 'text-blue-700 dark:text-blue-400'}`}>
+                      {projectName}
+                      {!isBench && employeeAssignment && employeeAssignment.allocation_percentage < 100 && (
+                        <span className="text-[10px] font-bold opacity-80">· {employeeAssignment.allocation_percentage}%</span>
+                      )}
+                    </span>
+                    {dateValue && (
+                      <span className={`flex items-center gap-1 text-[10px] font-medium leading-tight ${isBench ? 'text-rose-500/80 dark:text-rose-500' : 'text-blue-500/80 dark:text-blue-500'}`}>
+                        {isBench
+                          ? <Clock className="w-2.5 h-2.5 flex-shrink-0" />
+                          : <CalendarDays className="w-2.5 h-2.5 flex-shrink-0" />
+                        }
+                        {dateLabel} {dateValue}
+                      </span>
+                    )}
                   </button>
                 )
               })}
@@ -757,7 +788,7 @@ export function EmployeesViewV2({
       <AssignmentModal
         open={assignmentModal.open}
         onClose={() => setAssignmentModal({ open: false, employeeId: null, assignment: null })}
-        onSave={onSaveAssignment}
+        onSave={(data) => onSaveAssignment(data, assignmentModal.assignment?.id)}
         onDelete={onDeleteAssignment}
         assignment={assignmentModal.assignment}
         employees={employees}

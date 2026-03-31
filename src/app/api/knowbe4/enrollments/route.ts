@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 
+import { parseRelativeDuration } from '@/lib/training-utils'
+
 const KB4_BASE = 'https://eu.api.knowbe4.com/v1'
 
 function kb4Headers() {
@@ -21,17 +23,6 @@ function bambooAuth() {
   }
 }
 
-// Parse "N months", "N weeks", "N days" into milliseconds
-function parseRelativeDuration(rel: string): number | null {
-  const m = rel.trim().match(/^(\d+)\s+(day|week|month)s?$/i)
-  if (!m) return null
-  const n = parseInt(m[1])
-  const unit = m[2].toLowerCase()
-  if (unit === 'day') return n * 86400000
-  if (unit === 'week') return n * 7 * 86400000
-  if (unit === 'month') return n * 30 * 86400000
-  return null
-}
 
 interface CampaignMeta {
   end_date: string | null

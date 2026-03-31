@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isValidDate } from '@/lib/training-utils'
 
 // Training completion fields: integer field IDs from /v1/meta/fields where name ends in "- Completed"
 // Key = field ID, Value = display name (with " - Completed" stripped)
@@ -53,9 +54,6 @@ function bambooAuth() {
   }
 }
 
-function isValidDate(d: string | null | undefined) {
-  return d && d !== '0000-00-00' && d !== ''
-}
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)

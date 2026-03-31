@@ -56,7 +56,7 @@ function formatCompactCurrency(value: number | null | undefined): string {
 
 function formatEuroNumber(value: number | null | undefined): string {
   if (value === null || value === undefined) return ''
-  return new Intl.NumberFormat('de-DE', {
+  return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
   }).format(Math.round(value))
@@ -232,6 +232,7 @@ export function CeoDashboardView({
     const [viewModalEntry, setViewModalEntry] = useState<CeoDashboardEntry | null>(null)
     const [trackerModalSaving, setTrackerModalSaving] = useState(false)
     const [trackerForm, setTrackerForm] = useState<Partial<CeoDashboardEntryInput>>({})
+    const [pipelineLoading, setPipelineLoading] = useState(false)
 
   useEffect(() => {
     if (entries.length > 0 && !selectedWeekId) {
@@ -372,7 +373,7 @@ export function CeoDashboardView({
     return nextMonday.toISOString().split('T')[0]
   }, [])
 
-    const handleOpenAddModal = useCallback(() => {
+    const handleOpenAddModal = useCallback(async () => {
       setTrackerModalEntry(null)
       setTrackerForm({
         week_ended: getNextMonday(),
@@ -397,6 +398,37 @@ export function CeoDashboardView({
         notes: null,
       })
       setTrackerModalOpen(true)
+      setPipelineLoading(true)
+      try {
+        const res = await fetch('/api/dynamics/opportunities')
+        if (res.ok) {
+          const data = await res.json()
+          const opps: any[] = data.opportunities ?? []
+          const won: any[] = data.wonLast7d ?? []
+          const lost: any[] = data.lostLast7d ?? []
+          const now = new Date()
+          const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+          const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+          const totalValue = opps.reduce((s, o) => s + (o.estimatedValue ?? 0), 0)
+          const totalWeighted = opps.reduce((s, o) => s + (o.estimatedValue ?? 0) * ((o.closeProbability ?? 0) / 100), 0)
+          const addedLast7d = opps.filter(o => new Date(o.createdOn) >= sevenDaysAgo).length
+          const wonEur = won.reduce((s, o) => s + (o.estimatedValue ?? 0), 0)
+          const lostCount = lost.length
+          const weighted30d = opps
+            .filter(o => o.closeDate && new Date(o.closeDate) >= now && new Date(o.closeDate) <= in30Days)
+            .reduce((s, o) => s + (o.estimatedValue ?? 0) * ((o.closeProbability ?? 0) / 100), 0)
+          setTrackerForm(prev => ({
+            ...prev,
+            pipeline_total_eur: totalValue || null,
+            pipeline_weighted_eur: Math.round(totalWeighted) || null,
+            opps_added: addedLast7d || null,
+            opps_won_eur: wonEur || null,
+            opps_lost: lostCount || null,
+            expected_closes_30d_eur: Math.round(weighted30d) || null,
+          }))
+        }
+      } catch { /* ignore, user can fill manually */ }
+      finally { setPipelineLoading(false) }
     }, [getNextMonday, currentRagCounts, currentUtilization, currentBenchCount])
 
     const handleOpenEditModal = useCallback((entry: CeoDashboardEntry) => {
@@ -1330,6 +1362,12 @@ export function CeoDashboardView({
                     <Target className="w-3.5 h-3.5 text-emerald-600" />
                   </div>
                   <h3 className="text-sm font-semibold">Sales & Pipeline</h3>
+                  {pipelineLoading && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground ml-2">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Loading from Dynamics…
+                    </span>
+                  )}
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1.5">
@@ -1343,20 +1381,18 @@ export function CeoDashboardView({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Pipeline Total</Label>
-                    <Input
-                      type="number"
-                      value={trackerForm.pipeline_total_eur ?? ''}
-                      onChange={(e) => setTrackerForm(prev => ({ ...prev, pipeline_total_eur: e.target.value ? Number(e.target.value) : null }))}
-                      className="h-9 bg-muted/30 border-border focus-visible:ring-1 focus-visible:ring-[#ea2775]/50 rounded-lg"
+                    <EuroInput
+                      defaultValue={trackerForm.pipeline_total_eur}
+                      onSave={(val) => setTrackerForm(prev => ({ ...prev, pipeline_total_eur: val }))}
+                      className="h-9 w-full bg-muted/30 border-border focus-visible:ring-1 focus-visible:ring-[#ea2775]/50 rounded-lg"
                     />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Pipeline Weighted</Label>
-                    <Input
-                      type="number"
-                      value={trackerForm.pipeline_weighted_eur ?? ''}
-                      onChange={(e) => setTrackerForm(prev => ({ ...prev, pipeline_weighted_eur: e.target.value ? Number(e.target.value) : null }))}
-                      className="h-9 bg-muted/30 border-border focus-visible:ring-1 focus-visible:ring-[#ea2775]/50 rounded-lg"
+                    <EuroInput
+                      defaultValue={trackerForm.pipeline_weighted_eur}
+                      onSave={(val) => setTrackerForm(prev => ({ ...prev, pipeline_weighted_eur: val }))}
+                      className="h-9 w-full bg-muted/30 border-border focus-visible:ring-1 focus-visible:ring-[#ea2775]/50 rounded-lg"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -1370,11 +1406,10 @@ export function CeoDashboardView({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Opps Won (EUR)</Label>
-                    <Input
-                      type="number"
-                      value={trackerForm.opps_won_eur ?? ''}
-                      onChange={(e) => setTrackerForm(prev => ({ ...prev, opps_won_eur: e.target.value ? Number(e.target.value) : null }))}
-                      className="h-9 bg-muted/30 border-border focus-visible:ring-1 focus-visible:ring-[#ea2775]/50 rounded-lg"
+                    <EuroInput
+                      defaultValue={trackerForm.opps_won_eur}
+                      onSave={(val) => setTrackerForm(prev => ({ ...prev, opps_won_eur: val }))}
+                      className="h-9 w-full bg-muted/30 border-border focus-visible:ring-1 focus-visible:ring-[#ea2775]/50 rounded-lg"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -1389,11 +1424,10 @@ export function CeoDashboardView({
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Expected Closes (30d)</Label>
-                  <Input
-                    type="number"
-                    value={trackerForm.expected_closes_30d_eur ?? ''}
-                    onChange={(e) => setTrackerForm(prev => ({ ...prev, expected_closes_30d_eur: e.target.value ? Number(e.target.value) : null }))}
-                    className="h-9 bg-muted/30 border-border focus-visible:ring-1 focus-visible:ring-[#ea2775]/50 rounded-lg w-1/3"
+                  <EuroInput
+                    defaultValue={trackerForm.expected_closes_30d_eur}
+                    onSave={(val) => setTrackerForm(prev => ({ ...prev, expected_closes_30d_eur: val }))}
+                    className="h-9 w-1/3 bg-muted/30 border-border focus-visible:ring-1 focus-visible:ring-[#ea2775]/50 rounded-lg"
                   />
                 </div>
               </div>

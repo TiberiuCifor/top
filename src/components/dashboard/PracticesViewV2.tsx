@@ -491,8 +491,9 @@ export function PracticesViewV2({
       >
         {groupedByPractice.map(([gid, data]) => {
           const practiceSquads = squads.filter(s => s.practice_id === gid)
+          const practiceSquadIds = new Set(practiceSquads.map(s => s.id))
           const unassignedEmployees = data.employees.filter(e => {
-            const isUnassigned = !e.squad_id
+            const isUnassigned = !e.squad_id || !practiceSquadIds.has(e.squad_id)
             const isLead = e.practice_role === 'Lead' || e.practice_role === 'Squad Lead' || squads.some(s => s.squad_lead_id === e.id)
             return isUnassigned && !isLead
           })

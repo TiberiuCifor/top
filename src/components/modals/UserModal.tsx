@@ -19,7 +19,7 @@ export function UserModal({ open, onClose, onSave, user }: UserModalProps) {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [role, setRole] = useState<'admin' | 'user' | 'project_lead' | 'sales' | 'practice_lead' | 'leadership'>('user')
+  const [role, setRole] = useState<'admin' | 'user' | 'project_lead' | 'sales' | 'practice_lead' | 'leadership' | 'hr'>('user')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -104,7 +104,7 @@ export function UserModal({ open, onClose, onSave, user }: UserModalProps) {
               )}
               <div className="grid gap-2">
                 <Label htmlFor="role">Role</Label>
-<Select value={role} onValueChange={(v) => setRole(v as 'admin' | 'user' | 'project_lead' | 'sales' | 'practice_lead' | 'leadership')}>
+<Select value={role} onValueChange={(v) => setRole(v as 'admin' | 'user' | 'project_lead' | 'sales' | 'practice_lead' | 'leadership' | 'hr')}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select role" />
                       </SelectTrigger>
@@ -113,6 +113,7 @@ export function UserModal({ open, onClose, onSave, user }: UserModalProps) {
                         <SelectItem value="project_lead">Project Lead</SelectItem>
                         <SelectItem value="practice_lead">Practice Lead</SelectItem>
                         <SelectItem value="sales">Sales</SelectItem>
+                        <SelectItem value="hr">HR</SelectItem>
                         <SelectItem value="leadership">Leadership</SelectItem>
                         <SelectItem value="admin">Admin</SelectItem>
                       </SelectContent>

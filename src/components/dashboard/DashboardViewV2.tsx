@@ -303,6 +303,8 @@ function ToolbarV2({ assignments, groupBy, setGroupBy, filterEmployee, setFilter
   )
 }
 
+const getEmpRowHeight = (n: number) => 52 + Math.max(1, n) * 16
+
 function TimelineViewV2(props: ViewProps) {
   const { assignments, onEdit, groupBy, employees, projects } = props
   const [timeScale, setTimeScale] = useState<'days' | 'weeks' | 'months'>('weeks')
@@ -359,6 +361,8 @@ function TimelineViewV2(props: ViewProps) {
   maxDate.setDate(maxDate.getDate() + 7)
 
   const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24))
+  const todayOffset = Math.ceil((today.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24))
+  const todayPercent = totalDays > 0 ? (todayOffset / totalDays) * 100 : -1
 
   const getTimelineMarkers = () => {
     const markers: { label: string, position: number, isMonthLabel?: boolean, day?: number, weekNum?: number }[] = []
@@ -481,7 +485,7 @@ function TimelineViewV2(props: ViewProps) {
                               </span>
                               <div className="flex-1 min-w-0">
                                 <p className="font-semibold text-sm truncate text-foreground">{project.name} {project.client?.name && <span className="text-muted-foreground font-normal">({project.client.name})</span>}</p>
-                                <p className="text-xs text-muted-foreground">{assignments.length} resource{assignments.length !== 1 ? 's' : ''}</p>
+                                <p className="text-xs text-muted-foreground">{new Set(assignments.map(a => a.employee_id ?? a.employee?.id).filter(Boolean)).size} resource{new Set(assignments.map(a => a.employee_id ?? a.employee?.id).filter(Boolean)).size !== 1 ? 's' : ''}</p>
                                 <p className="text-xs text-muted-foreground mt-0.5">
                                   {project.start_date && project.end_date
                                     ? `${new Date(project.start_date).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })} - ${new Date(project.end_date).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}`
@@ -493,28 +497,49 @@ function TimelineViewV2(props: ViewProps) {
                             </div>
                           </div>
                         )}
-                        {(isBench || isExpanded) && (
-                          <div className={!isBench ? 'border border-border/40 rounded-lg bg-muted/20 p-2' : ''}>
-                            {assignments.map(assignment => (
-                              <div
-                                key={assignment.id}
-                                className="h-[56px] cursor-pointer hover:bg-muted/50 rounded-md p-2 transition-colors mb-1"
-                                onClick={() => onEdit(assignment)}
-                              >
-                                <div className="pl-6 flex flex-col justify-center h-full">
-                                  <p className="text-xs font-medium truncate text-foreground">
-                                    {assignment.employee?.full_name} <span className="text-muted-foreground">({assignment.employee?.contract_type})</span>
-                                  </p>
-                                  <p className="text-xs text-muted-foreground truncate">
-                                    {assignment.project?.name.toLowerCase() === 'bench'
-                                      ? (assignment.role_on_project && assignment.role_on_project.toLowerCase() !== 'bench' ? assignment.role_on_project : (assignment.employee?.role_data?.name || assignment.employee?.role || 'Team Member'))
-                                      : (assignment.role_on_project || assignment.employee?.role || 'Team Member')}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        {(isBench || isExpanded) && (() => {
+                          const byEmpTL = new Map<string, { emp: Employee; empAssigns: Assignment[] }>()
+                          assignments.forEach(a => {
+                            if (!a.employee) return
+                            const eid = a.employee_id ?? a.employee.id
+                            const ex = byEmpTL.get(eid)
+                            if (ex) ex.empAssigns.push(a)
+                            else byEmpTL.set(eid, { emp: a.employee, empAssigns: [a] })
+                          })
+                          return (
+                            <div className={!isBench ? 'border border-border/40 rounded-lg bg-muted/20 p-2' : ''}>
+                              {Array.from(byEmpTL.values()).map(({ emp, empAssigns }) => {
+                                const currentA = empAssigns.find(a => {
+                                  const s = new Date(a.start_date); s.setHours(0, 0, 0, 0)
+                                  const e = a.end_date ? new Date(a.end_date) : new Date(s.getFullYear(), 11, 31); e.setHours(23, 59, 59, 999)
+                                  return today >= s && today <= e
+                                }) ?? empAssigns[0]
+                                return (
+                                  <div
+                                    key={emp.id}
+                                    style={{ height: `${getEmpRowHeight(empAssigns.length)}px` }}
+                                    className="cursor-pointer hover:bg-muted/50 rounded-md p-2 transition-colors mb-1"
+                                    onClick={() => currentA && onEdit(currentA)}
+                                  >
+                                    <div className="pl-6 flex flex-col justify-center h-full gap-0.5">
+                                      <p className="text-xs font-medium truncate text-foreground">
+                                        {emp.full_name} <span className="text-muted-foreground">({emp.contract_type})</span>
+                                      </p>
+                                      <p className="text-xs text-muted-foreground truncate">
+                                        {currentA?.role_on_project && currentA.role_on_project.toLowerCase() !== 'bench' ? currentA.role_on_project : (emp.role_data?.name || emp.role || 'Team Member')}
+                                      </p>
+                                      {[...empAssigns].sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime()).map(a => (
+                                        <p key={a.id} className="text-[11px] text-muted-foreground/70 leading-tight">
+                                          {a.allocation_percentage}% · {new Date(a.start_date).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })} – {a.end_date ? new Date(a.end_date).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Ongoing'}
+                                        </p>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )
+                        })()}
                       </div>
                     )
                   })
@@ -537,25 +562,38 @@ function TimelineViewV2(props: ViewProps) {
                             </div>
                           </div>
                         </div>
-                        {isExpanded && (
-                          <>
-                            {assignments.map(assignment => (
+                        {isExpanded && (() => {
+                          const byProjTL = new Map<string, { proj: Project; projAssigns: Assignment[] }>()
+                          assignments.forEach(a => {
+                            if (!a.project) return
+                            const pid = a.project_id ?? a.project.id
+                            const ex = byProjTL.get(pid)
+                            if (ex) ex.projAssigns.push(a)
+                            else byProjTL.set(pid, { proj: a.project, projAssigns: [a] })
+                          })
+                          return Array.from(byProjTL.values()).map(({ proj, projAssigns }) => {
+                            const currentA = projAssigns.find(a => {
+                              const s = new Date(a.start_date); s.setHours(0, 0, 0, 0)
+                              const e = a.end_date ? new Date(a.end_date) : new Date(s.getFullYear(), 11, 31); e.setHours(23, 59, 59, 999)
+                              return today >= s && today <= e
+                            }) ?? projAssigns[0]
+                            return (
                               <div
-                                key={assignment.id}
+                                key={proj.id}
                                 className="h-[56px] cursor-pointer hover:bg-muted/50 rounded-md p-2 transition-colors mb-1"
-                                onClick={() => onEdit(assignment)}
+                                onClick={() => currentA && onEdit(currentA)}
                               >
                                 <div className="pl-6 flex flex-col justify-center h-full">
                                   <p className="text-xs font-medium truncate text-foreground">
-                                    {assignment.project?.name.toLowerCase() === 'bench'
-                                      ? (assignment.role_on_project && assignment.role_on_project.toLowerCase() !== 'bench' ? assignment.role_on_project : (employee.role_data?.name || employee.role || 'Team Member'))
-                                      : `${assignment.project?.name}${assignment.project?.client?.name ? ` (${assignment.project.client.name})` : ''}`}
+                                    {proj.name.toLowerCase() === 'bench'
+                                      ? (currentA?.role_on_project && currentA.role_on_project.toLowerCase() !== 'bench' ? currentA.role_on_project : (employee.role_data?.name || employee.role || 'Team Member'))
+                                      : `${proj.name}${proj.client?.name ? ` (${proj.client.name})` : ''}`}
                                   </p>
                                 </div>
                               </div>
-                            ))}
-                          </>
-                        )}
+                            )
+                          })
+                        })()}
                       </div>
                     )
                   })
@@ -566,7 +604,15 @@ function TimelineViewV2(props: ViewProps) {
 
           {/* Timeline area */}
           <div ref={scrollContainerRef} className="flex-1">
-            <div style={{ minWidth: `${Math.max(1200, markers.filter(m => !m.isMonthLabel).length * (timeScale === 'days' ? 40 : timeScale === 'weeks' ? 60 : 150))}px` }} className="p-4">
+            <div style={{ minWidth: `${Math.max(1200, markers.filter(m => !m.isMonthLabel).length * (timeScale === 'days' ? 40 : timeScale === 'weeks' ? 60 : 150))}px` }} className="p-4 relative">
+              {todayPercent >= 0 && todayPercent <= 100 && (
+                <div
+                  className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-20 pointer-events-none"
+                  style={{ left: `${todayPercent}%` }}
+                >
+                  <span className="absolute top-3 -translate-x-1/2 text-[9px] font-bold text-red-500 whitespace-nowrap bg-background px-1 rounded border border-red-300 shadow-sm">Today</span>
+                </div>
+              )}
               <div className="relative mb-8 h-16 border-b border-border">
                 {markers.filter(m => m.isMonthLabel).map((marker, i) => (
                   <div key={`month-${i}`} className="absolute top-0 h-6" style={{ left: `${marker.position}%` }}>
@@ -588,33 +634,47 @@ function TimelineViewV2(props: ViewProps) {
                     return (
                       <div key={project.id} className="mb-3">
                         {!isBench && <div className="h-[76px] flex items-center mb-3" />}
-                        {(isBench || isExpanded) && (
-                          <div className={!isBench ? 'border border-border/40 rounded-lg bg-muted/20 p-2' : ''}>
-                            {assignments.map(assignment => {
-                              const assignmentStart = new Date(assignment.start_date); assignmentStart.setHours(0, 0, 0, 0)
-                              const assignmentEnd = assignment.end_date ? new Date(assignment.end_date) : new Date(assignmentStart); assignmentEnd.setHours(0, 0, 0, 0)
-                              const startOffset = Math.max(0, Math.ceil((assignmentStart.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)))
-                              const duration = assignment.end_date ? Math.max(1, Math.ceil((assignmentEnd.getTime() - assignmentStart.getTime()) / (1000 * 60 * 60 * 24)) + 1) : 7
-                              const leftPercent = (startOffset / totalDays) * 100
-                              const widthPercent = Math.max((duration / totalDays) * 100, 2)
-                              return (
-                                <div key={assignment.id} className="h-[56px] relative cursor-pointer mb-1" onClick={() => onEdit(assignment)}>
+                        {(isBench || isExpanded) && (() => {
+                          const byEmpBars = new Map<string, { emp: Employee; empAssigns: Assignment[] }>()
+                          assignments.forEach(a => {
+                            if (!a.employee) return
+                            const eid = a.employee_id ?? a.employee.id
+                            const ex = byEmpBars.get(eid)
+                            if (ex) ex.empAssigns.push(a)
+                            else byEmpBars.set(eid, { emp: a.employee, empAssigns: [a] })
+                          })
+                          return (
+                            <div className={!isBench ? 'border border-border/40 rounded-lg bg-muted/20 p-2' : ''}>
+                              {Array.from(byEmpBars.values()).map(({ emp, empAssigns }) => (
+                                <div key={emp.id} style={{ height: `${getEmpRowHeight(empAssigns.length)}px` }} className="relative mb-1">
                                   <div className="relative h-full flex items-center">
-                                    <div
-                                      className={`absolute top-1/2 -translate-y-1/2 h-8 rounded-md px-2 flex items-center gap-2 text-xs font-medium ${getBarColor(assignment)} border shadow-sm`}
-                                      style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, minWidth: '80px' }}
-                                    >
-                                      <span className="truncate flex-1">
-                                        {new Date(assignment.start_date).toLocaleDateString('en', { month: 'short', day: 'numeric' })} - {assignment.end_date ? new Date(assignment.end_date).toLocaleDateString('en', { month: 'short', day: 'numeric' }) : 'Ongoing'}
-                                      </span>
-                                      <Badge variant="secondary" className="text-xs h-5 px-1.5 font-medium bg-white/20 text-inherit border-0">{assignment.allocation_percentage}%</Badge>
-                                    </div>
+                                    {empAssigns.map(assignment => {
+                                      const aStart = new Date(assignment.start_date); aStart.setHours(0, 0, 0, 0)
+                                      const aEnd = assignment.end_date ? new Date(assignment.end_date) : new Date(aStart); aEnd.setHours(0, 0, 0, 0)
+                                      const startOffset = Math.max(0, Math.ceil((aStart.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)))
+                                      const duration = assignment.end_date ? Math.max(1, Math.ceil((aEnd.getTime() - aStart.getTime()) / (1000 * 60 * 60 * 24)) + 1) : 7
+                                      const leftPercent = (startOffset / totalDays) * 100
+                                      const widthPercent = Math.max((duration / totalDays) * 100, 2)
+                                      return (
+                                        <div
+                                          key={assignment.id}
+                                          className={`absolute top-1/2 -translate-y-1/2 h-8 rounded-md px-2 flex items-center gap-2 text-xs font-medium cursor-pointer ${getBarColor(assignment)} border shadow-sm`}
+                                          style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, minWidth: '80px' }}
+                                          onClick={() => onEdit(assignment)}
+                                        >
+                                          <span className="truncate flex-1">
+                                            {new Date(assignment.start_date).toLocaleDateString('en', { month: 'short', day: 'numeric' })} - {assignment.end_date ? new Date(assignment.end_date).toLocaleDateString('en', { month: 'short', day: 'numeric' }) : 'Ongoing'}
+                                          </span>
+                                          <Badge variant="secondary" className="text-xs h-5 px-1.5 font-medium bg-white/20 text-inherit border-0">{assignment.allocation_percentage}%</Badge>
+                                        </div>
+                                      )
+                                    })}
                                   </div>
                                 </div>
-                              )
-                            })}
-                          </div>
-                        )}
+                              ))}
+                            </div>
+                          )
+                        })()}
                       </div>
                     )
                   })
@@ -624,33 +684,43 @@ function TimelineViewV2(props: ViewProps) {
                     return (
                       <div key={employee.id} className="mb-3">
                         <div className="h-[76px] flex items-center mb-3" />
-                        {isExpanded && (
-                          <>
-                            {assignments.map(assignment => {
-                              const assignmentStart = new Date(assignment.start_date); assignmentStart.setHours(0, 0, 0, 0)
-                              const assignmentEnd = assignment.end_date ? new Date(assignment.end_date) : new Date(assignmentStart); assignmentEnd.setHours(0, 0, 0, 0)
-                              const startOffset = Math.max(0, Math.ceil((assignmentStart.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)))
-                              const duration = assignment.end_date ? Math.max(1, Math.ceil((assignmentEnd.getTime() - assignmentStart.getTime()) / (1000 * 60 * 60 * 24)) + 1) : 7
-                              const leftPercent = (startOffset / totalDays) * 100
-                              const widthPercent = Math.max((duration / totalDays) * 100, 2)
-                              return (
-                                <div key={assignment.id} className="h-[56px] relative cursor-pointer mb-1" onClick={() => onEdit(assignment)}>
-                                  <div className="relative h-full flex items-center">
+                        {isExpanded && (() => {
+                          const byProjBars = new Map<string, { proj: Project; projAssigns: Assignment[] }>()
+                          assignments.forEach(a => {
+                            if (!a.project) return
+                            const pid = a.project_id ?? a.project.id
+                            const ex = byProjBars.get(pid)
+                            if (ex) ex.projAssigns.push(a)
+                            else byProjBars.set(pid, { proj: a.project, projAssigns: [a] })
+                          })
+                          return Array.from(byProjBars.values()).map(({ proj, projAssigns }) => (
+                            <div key={proj.id} className="h-[56px] relative mb-1">
+                              <div className="relative h-full flex items-center">
+                                {projAssigns.map(assignment => {
+                                  const aStart = new Date(assignment.start_date); aStart.setHours(0, 0, 0, 0)
+                                  const aEnd = assignment.end_date ? new Date(assignment.end_date) : new Date(aStart); aEnd.setHours(0, 0, 0, 0)
+                                  const startOffset = Math.max(0, Math.ceil((aStart.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)))
+                                  const duration = assignment.end_date ? Math.max(1, Math.ceil((aEnd.getTime() - aStart.getTime()) / (1000 * 60 * 60 * 24)) + 1) : 7
+                                  const leftPercent = (startOffset / totalDays) * 100
+                                  const widthPercent = Math.max((duration / totalDays) * 100, 2)
+                                  return (
                                     <div
-                                      className={`absolute top-1/2 -translate-y-1/2 h-8 rounded-md px-2 flex items-center gap-2 text-xs font-medium ${getBarColor(assignment)} border shadow-sm`}
+                                      key={assignment.id}
+                                      className={`absolute top-1/2 -translate-y-1/2 h-8 rounded-md px-2 flex items-center gap-2 text-xs font-medium cursor-pointer ${getBarColor(assignment)} border shadow-sm`}
                                       style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, minWidth: '80px' }}
+                                      onClick={() => onEdit(assignment)}
                                     >
                                       <span className="truncate flex-1">
                                         {new Date(assignment.start_date).toLocaleDateString('en', { month: 'short', day: 'numeric' })} - {assignment.end_date ? new Date(assignment.end_date).toLocaleDateString('en', { month: 'short', day: 'numeric' }) : 'Ongoing'}
                                       </span>
                                       <Badge variant="secondary" className="text-xs h-5 px-1.5 font-medium bg-white/20 text-inherit border-0">{assignment.allocation_percentage}%</Badge>
                                     </div>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </>
-                        )}
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          ))
+                        })()}
                       </div>
                     )
                   })
@@ -765,6 +835,18 @@ function GridViewV2(props: ViewProps) {
 
   const columns = getTimeColumns()
 
+  const isColumnToday = (date: Date): boolean => {
+    if (timeScale === 'days') {
+      return date.toDateString() === today.toDateString()
+    } else if (timeScale === 'weeks') {
+      const weekEnd = new Date(date)
+      weekEnd.setDate(weekEnd.getDate() + 6)
+      return today >= date && today <= weekEnd
+    } else {
+      return date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear()
+    }
+  }
+
   useEffect(() => {
     if (lastScaleRef.current !== timeScale) { didAutoScrollRef.current = false; lastScaleRef.current = timeScale }
     if (didAutoScrollRef.current) return
@@ -877,11 +959,14 @@ function GridViewV2(props: ViewProps) {
             </tr>
             <tr>
               <th className="sticky left-0 p-3 text-left text-xs font-semibold border-b border-r border-border min-w-[310px] bg-card text-foreground z-40">Project / Employee</th>
-              {columns.map((col, i) => (
-                <th key={i} className={`p-2 text-xs font-medium border-b border-r border-border ${timeScale === 'days' ? 'min-w-[40px]' : 'min-w-[60px]'} text-center text-muted-foreground bg-card`}>
-                  {col.label}
-                </th>
-              ))}
+              {columns.map((col, i) => {
+                const isTodayCol = isColumnToday(col.date)
+                return (
+                  <th key={i} className={`p-2 text-xs font-medium border-b border-r ${timeScale === 'days' ? 'min-w-[40px]' : 'min-w-[60px]'} text-center ${isTodayCol ? 'bg-red-50 dark:bg-red-950/30 text-red-500 font-bold border-l-2 border-l-red-500 border-r-border' : 'border-border text-muted-foreground bg-card'}`}>
+                    {col.label}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
@@ -905,69 +990,86 @@ function GridViewV2(props: ViewProps) {
                               <p className="font-semibold text-sm text-foreground">
                                 {project.name} | <span className="text-[#ea2775] font-medium">{project.client?.name || 'No Client'}</span>
                               </p>
-                              <p className="text-xs text-muted-foreground">{assignments.length} resource{assignments.length !== 1 ? 's' : ''} | {project.start_date ? new Date(project.start_date).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No Start Date'} - {project.end_date ? new Date(project.end_date).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Ongoing'}</p>
+                              <p className="text-xs text-muted-foreground">{new Set(assignments.map(a => a.employee_id ?? a.employee?.id).filter(Boolean)).size} resource{new Set(assignments.map(a => a.employee_id ?? a.employee?.id).filter(Boolean)).size !== 1 ? 's' : ''} | {project.start_date ? new Date(project.start_date).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No Start Date'} - {project.end_date ? new Date(project.end_date).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Ongoing'}</p>
                             </div>
                           </div>
                         </td>
-                        {columns.map((_, i) => (
-                          <td key={i} className="p-0 border-b border-r border-border bg-muted/50" />
+                        {columns.map((col, i) => (
+                          <td key={i} className={`p-0 border-b border-r border-border bg-muted/50 ${isColumnToday(col.date) ? 'border-l-2 border-l-red-500' : ''}`} />
                         ))}
                       </tr>
                     )}
-                    {(isBench || isExpanded) && assignments.map(assignment => {
-                      const isBenchA = assignment.project?.name === 'Bench'
-                      const updateInfo = assignment.employee ? updatesByEmployee.get(assignment.employee.id) : null
-                      const hasUpdates = !!updateInfo && updateInfo.count > 0
-                      const isRecent = updateInfo?.lastUpdateAt ? ((new Date().getTime() - new Date(updateInfo.lastUpdateAt).getTime()) < 24 * 60 * 60 * 1000) : false
-                      return (
-                        <tr key={assignment.id} className="hover:bg-muted/30 transition-colors">
-                          <td className="sticky left-0 p-3 border-b border-r border-border min-w-[340px] bg-card z-20">
-                            <div className="flex items-center gap-2">
-                              <div className="w-7 flex-shrink-0 flex items-center justify-center">
-                                {hasUpdates && (
-                                  <button onClick={(e) => { e.stopPropagation(); setUpdateModal({ open: true, employee: assignment.employee ?? null }) }}>
-                                    <MessageSquare className={`w-4 h-4 ${isRecent ? 'text-rose-500 fill-rose-500/20' : 'text-[#ea2775] fill-[#ea2775]/20'}`} />
-                                  </button>
-                                )}
-                              </div>
-                              <div className="flex-1">
-                                <button onClick={(e) => { e.stopPropagation(); setUpdateModal({ open: true, employee: assignment.employee ?? null }) }} className="text-left w-full hover:underline">
-                                  <p className="font-medium text-sm text-foreground">
-                                    {assignment.employee?.full_name} <span className="text-muted-foreground">({assignment.employee?.contract_type})</span> <Badge variant="outline" className="text-xs ml-1 border-border">{assignment.allocation_percentage}%</Badge>
-                                  </p>
-                                </button>
-                                <p className="text-xs text-muted-foreground">
-                                  {assignment.project?.name.toLowerCase() === 'bench'
-                                    ? (assignment.role_on_project && assignment.role_on_project.toLowerCase() !== 'bench' ? assignment.role_on_project : (assignment.employee?.role_data?.name || assignment.employee?.role || 'Team Member'))
-                                    : (assignment.role_on_project || assignment.employee?.role_data?.name || assignment.employee?.role || 'Team Member')}
-                                </p>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  {new Date(assignment.start_date).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })} - {assignment.end_date ? new Date(assignment.end_date).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' }) : `Dec 31, ${new Date(assignment.start_date).getFullYear()}`}
-                                </p>
-                              </div>
-                            </div>
-                          </td>
-                          {columns.map((col, i) => {
-                            const isAllocated = isDateInAssignment(col.date, assignment)
-                            return (
-                              <td
-                                key={i}
-                                className={`p-0 border-b border-r border-border cursor-pointer transition-colors ${getCellColor(isAllocated, isBenchA, assignment.allocation_percentage)}`}
-                                onClick={(e) => { e.stopPropagation(); onEdit(assignment) }}
-                              >
-                                <div className="w-full h-full min-h-[80px] flex items-center justify-center">
-                                  {isAllocated && (
-                                    <span className={`text-xs font-semibold ${getCellTextColor(isBenchA, assignment.allocation_percentage)}`}>
-                                      {assignment.allocation_percentage}%
-                                    </span>
+                    {(isBench || isExpanded) && (() => {
+                      // Merge: one row per unique employee, cells show whichever assignment is active that day
+                      const byEmp = new Map<string, { emp: Employee; empAssigns: Assignment[] }>()
+                      assignments.forEach(a => {
+                        if (!a.employee) return
+                        const eid = a.employee_id ?? a.employee.id
+                        const existing = byEmp.get(eid)
+                        if (existing) existing.empAssigns.push(a)
+                        else byEmp.set(eid, { emp: a.employee, empAssigns: [a] })
+                      })
+                      return Array.from(byEmp.values()).map(({ emp, empAssigns }) => {
+                        const currentA = empAssigns.find(a => {
+                          const s = new Date(a.start_date); s.setHours(0, 0, 0, 0)
+                          const e = a.end_date ? new Date(a.end_date) : new Date(s.getFullYear(), 11, 31); e.setHours(23, 59, 59, 999)
+                          return today >= s && today <= e
+                        }) ?? empAssigns.sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())[0]
+                        const updateInfo = updatesByEmployee.get(emp.id)
+                        const hasUpdates = !!updateInfo && updateInfo.count > 0
+                        const isRecent = updateInfo?.lastUpdateAt ? ((new Date().getTime() - new Date(updateInfo.lastUpdateAt).getTime()) < 24 * 60 * 60 * 1000) : false
+                        return (
+                          <tr key={emp.id} className="hover:bg-muted/30 transition-colors">
+                            <td className="sticky left-0 p-3 border-b border-r border-border min-w-[340px] bg-card z-20">
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 flex-shrink-0 flex items-center justify-center">
+                                  {hasUpdates && (
+                                    <button onClick={(e) => { e.stopPropagation(); setUpdateModal({ open: true, employee: emp }) }}>
+                                      <MessageSquare className={`w-4 h-4 ${isRecent ? 'text-rose-500 fill-rose-500/20' : 'text-[#ea2775] fill-[#ea2775]/20'}`} />
+                                    </button>
                                   )}
                                 </div>
-                              </td>
-                            )
-                          })}
-                        </tr>
-                      )
-                    })}
+                                <div className="flex-1">
+                                  <button onClick={(e) => { e.stopPropagation(); setUpdateModal({ open: true, employee: emp }) }} className="text-left w-full hover:underline">
+                                    <p className="font-medium text-sm text-foreground">
+                                      {emp.full_name} <span className="text-muted-foreground">({emp.contract_type})</span>
+                                    </p>
+                                  </button>
+                                  <p className="text-xs text-muted-foreground">
+                                    {currentA?.role_on_project && currentA.role_on_project.toLowerCase() !== 'bench' ? currentA.role_on_project : (emp.role_data?.name || emp.role || 'Team Member')}
+                                  </p>
+                                  {[...empAssigns].sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime()).map(a => (
+                                    <p key={a.id} className="text-[11px] text-muted-foreground/70 leading-tight mt-0.5">
+                                      {a.allocation_percentage}% · {new Date(a.start_date).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })} – {a.end_date ? new Date(a.end_date).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Ongoing'}
+                                    </p>
+                                  ))}
+                                </div>
+                              </div>
+                            </td>
+                            {columns.map((col, i) => {
+                              const activeA = empAssigns.find(a => isDateInAssignment(col.date, a)) ?? null
+                              const isTodayCol = isColumnToday(col.date)
+                              const cellBench = activeA?.project?.name === 'Bench'
+                              return (
+                                <td
+                                  key={i}
+                                  className={`p-0 border-b border-r border-border cursor-pointer transition-colors ${getCellColor(!!activeA, cellBench, activeA?.allocation_percentage ?? 0)} ${isTodayCol ? 'border-l-2 border-l-red-500' : ''}`}
+                                  onClick={(e) => { if (activeA) { e.stopPropagation(); onEdit(activeA) } }}
+                                >
+                                  <div className="w-full h-full min-h-[80px] flex items-center justify-center">
+                                    {activeA && (
+                                      <span className={`text-xs font-semibold ${getCellTextColor(cellBench, activeA.allocation_percentage)}`}>
+                                        {activeA.allocation_percentage}%
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        )
+                      })
+                    })()}
                   </Fragment>
                 )
               })
@@ -1001,47 +1103,61 @@ function GridViewV2(props: ViewProps) {
                           </button>
                         </div>
                       </td>
-                      {columns.map((_, i) => (
-                        <td key={i} className="p-0 border-b border-r border-border bg-muted/50" />
+                      {columns.map((col, i) => (
+                        <td key={i} className={`p-0 border-b border-r border-border bg-muted/50 ${isColumnToday(col.date) ? 'border-l-2 border-l-red-500' : ''}`} />
                       ))}
                     </tr>
-                    {isExpanded && assignments.map(assignment => {
-                      const isBench = assignment.project?.name === 'Bench'
-                      return (
-                        <tr key={assignment.id} className="hover:bg-muted/30 transition-colors">
-                          <td className="sticky left-0 p-3 border-b border-r border-border pl-12 min-w-[310px] bg-card z-20">
-                            <div>
-                              <p className="font-medium text-sm text-foreground">
-                                {assignment.project?.name.toLowerCase() === 'bench'
-                                  ? (assignment.role_on_project && assignment.role_on_project.toLowerCase() !== 'bench' ? assignment.role_on_project : (employee.role_data?.name || employee.role || 'Team Member'))
-                                  : `${assignment.project?.name}${assignment.project?.client?.name ? ` (${assignment.project.client.name})` : ''}`} <Badge variant="outline" className="text-xs ml-1 border-border">{assignment.allocation_percentage}%</Badge>
-                              </p>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {new Date(assignment.start_date).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })} - {assignment.end_date ? new Date(assignment.end_date).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' }) : `Dec 31, ${new Date(assignment.start_date).getFullYear()}`}
-                              </p>
-                            </div>
-                          </td>
-                          {columns.map((col, i) => {
-                            const isAllocated = isDateInAssignment(col.date, assignment)
-                            return (
-                              <td
-                                key={i}
-                                className={`p-0 border-b border-r border-border cursor-pointer transition-colors ${getCellColor(isAllocated, isBench, assignment.allocation_percentage)}`}
-                                onClick={(e) => { e.stopPropagation(); onEdit(assignment) }}
-                              >
-                                <div className="w-full h-full min-h-[80px] flex items-center justify-center">
-                                  {isAllocated && (
-                                    <span className={`text-xs font-semibold ${getCellTextColor(isBench, assignment.allocation_percentage)}`}>
-                                      {assignment.allocation_percentage}%
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                            )
-                          })}
-                        </tr>
-                      )
-                    })}
+                    {isExpanded && (() => {
+                      // Merge: one row per unique project, cells show whichever assignment is active that day
+                      const byProj = new Map<string, { proj: Project; projAssigns: Assignment[] }>()
+                      assignments.forEach(a => {
+                        if (!a.project) return
+                        const pid = a.project_id ?? a.project.id
+                        const existing = byProj.get(pid)
+                        if (existing) existing.projAssigns.push(a)
+                        else byProj.set(pid, { proj: a.project, projAssigns: [a] })
+                      })
+                      return Array.from(byProj.values()).map(({ proj, projAssigns }) => {
+                        const isBench = proj.name === 'Bench'
+                        const currentA = projAssigns.find(a => {
+                          const s = new Date(a.start_date); s.setHours(0, 0, 0, 0)
+                          const e = a.end_date ? new Date(a.end_date) : new Date(s.getFullYear(), 11, 31); e.setHours(23, 59, 59, 999)
+                          return today >= s && today <= e
+                        }) ?? projAssigns.sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())[0]
+                        return (
+                          <tr key={proj.id} className="hover:bg-muted/30 transition-colors">
+                            <td className="sticky left-0 p-3 border-b border-r border-border pl-12 min-w-[310px] bg-card z-20">
+                              <div>
+                                <p className="font-medium text-sm text-foreground">
+                                  {isBench
+                                    ? (currentA?.role_on_project && currentA.role_on_project.toLowerCase() !== 'bench' ? currentA.role_on_project : (employee.role_data?.name || employee.role || 'Team Member'))
+                                    : `${proj.name}${proj.client?.name ? ` (${proj.client.name})` : ''}`}
+                                </p>
+                              </div>
+                            </td>
+                            {columns.map((col, i) => {
+                              const activeA = projAssigns.find(a => isDateInAssignment(col.date, a)) ?? null
+                              const isTodayCol = isColumnToday(col.date)
+                              return (
+                                <td
+                                  key={i}
+                                  className={`p-0 border-b border-r border-border cursor-pointer transition-colors ${getCellColor(!!activeA, isBench, activeA?.allocation_percentage ?? 0)} ${isTodayCol ? 'border-l-2 border-l-red-500' : ''}`}
+                                  onClick={(e) => { if (activeA) { e.stopPropagation(); onEdit(activeA) } }}
+                                >
+                                  <div className="w-full h-full min-h-[80px] flex items-center justify-center">
+                                    {activeA && (
+                                      <span className={`text-xs font-semibold ${getCellTextColor(isBench, activeA.allocation_percentage)}`}>
+                                        {activeA.allocation_percentage}%
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        )
+                      })
+                    })()}
                   </Fragment>
                 )
               })

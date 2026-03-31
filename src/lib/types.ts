@@ -129,7 +129,7 @@ export interface User {
   id: string
   full_name: string
   email: string
-  role: 'admin' | 'user' | 'project_lead' | 'sales' | 'practice_lead' | 'leadership'
+  role: string
   must_change_password: boolean
   created_at: string
   updated_at: string
@@ -257,3 +257,123 @@ export interface EmployeeListComment {
 
 export type EmployeeListInput = Omit<EmployeeList, 'id' | 'created_at' | 'updated_at' | 'created_by_user' | 'members'>
 export type EmployeeListCommentInput = Omit<EmployeeListComment, 'id' | 'created_at' | 'updated_at' | 'created_by_user' | 'reactions'> & { reactions?: Record<string, string[]> }
+
+export interface PLEvaluation {
+  id: string
+  practice_lead_id: string
+  practice_lead?: Employee
+  created_by_user?: { id: string; full_name: string } | null
+  month: string // ISO date string for first day of month (YYYY-MM-01)
+  // Dimension 1: People Development
+  dim1_score: 'G' | 'Y' | 'R' | null
+  dim1_evidence: string | null
+  dim1_growth_plan_current: number | null
+  dim1_growth_plan_total: number | null
+  dim1_sl_work: string | null
+  // Dimension 2: Technical Standards
+  dim2_score: 'G' | 'Y' | 'R' | null
+  dim2_evidence: string | null
+  dim2_projects_compliant: number | null
+  dim2_projects_total: number | null
+  // Dimension 3: Practice Health
+  dim3_score: 'G' | 'Y' | 'R' | null
+  dim3_evidence: string | null
+  dim3_attrition_concerns: string | null
+  // Dimension 4: Pre-Sales Contribution
+  dim4_score: 'G' | 'Y' | 'R' | null
+  dim4_evidence: string | null
+  dim4_scoping_calls: number | null
+  dim4_proposal_reviews: number | null
+  dim4_client_sessions: number | null
+  // Dimension 5: Content & AI Fluency
+  dim5_score: 'G' | 'Y' | 'R' | null
+  dim5_evidence: string | null
+  dim5_content: string | null
+  dim5_ai_development: string | null
+  overall_notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type PLEvaluationInput = Omit<PLEvaluation, 'id' | 'created_at' | 'updated_at' | 'practice_lead'>
+
+export interface ProjectLeadEvaluation {
+  id: string
+  project_lead_id: string
+  project_lead?: Employee
+  created_by_user?: { id: string; full_name: string } | null
+  month: string
+  // Dim 1: On-Time Delivery
+  dim1_score: 'G' | 'Y' | 'R' | null
+  dim1_evidence: string | null
+  dim1_sprint_completion: number | null
+  dim1_milestones_at_risk: string | null
+  // Dim 2: Client Satisfaction
+  dim2_score: 'G' | 'Y' | 'R' | null
+  dim2_evidence: string | null
+  dim2_client_escalations: number | null
+  dim2_escalations_resolved: string | null
+  // Dim 3: Budget & Scope
+  dim3_score: 'G' | 'Y' | 'R' | null
+  dim3_evidence: string | null
+  dim3_budget_status: number | null
+  dim3_scope_changes: number | null
+  dim3_scope_communicated: string | null
+  // Dim 4: Team Leadership
+  dim4_score: 'G' | 'Y' | 'R' | null
+  dim4_evidence: string | null
+  dim4_ones_held: number | null
+  dim4_ones_planned: number | null
+  dim4_morale_concerns: string | null
+  // Dim 5: Expansion Signals
+  dim5_score: 'G' | 'Y' | 'R' | null
+  dim5_evidence: string | null
+  dim5_expansion_opportunities: number | null
+  dim5_expansion_details: string | null
+  overall_notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ProjectLeadEvaluationInput = Omit<ProjectLeadEvaluation, 'id' | 'created_at' | 'updated_at' | 'project_lead'>
+
+export interface SquadLeadEvaluation {
+  id: string
+  squad_lead_id: string
+  squad_lead?: Employee
+  created_by_user?: { id: string; full_name: string } | null
+  month: string
+  // Dim 1: 1:1 Quality
+  dim1_score: 'G' | 'Y' | 'R' | null
+  dim1_evidence: string | null
+  dim1_ones_held: number | null
+  dim1_ones_planned: number | null
+  dim1_development_percent: number | null
+  // Dim 2: Growth Plans
+  dim2_score: 'G' | 'Y' | 'R' | null
+  dim2_evidence: string | null
+  dim2_growth_plan_current: number | null
+  dim2_growth_plan_total: number | null
+  // Dim 3: Engagement & Early Warning
+  dim3_score: 'G' | 'Y' | 'R' | null
+  dim3_evidence: string | null
+  dim3_engagement_concerns: string | null
+  dim3_high_potential: string | null
+  // Dim 4: Standards & Coaching
+  dim4_score: 'G' | 'Y' | 'R' | null
+  dim4_evidence: string | null
+  dim4_technical_gaps: string | null
+  // Dim 5: Content & AI Development
+  dim5_score: 'G' | 'Y' | 'R' | null
+  dim5_evidence: string | null
+  dim5_content: string | null
+  dim5_ai_skills: string | null
+  overall_notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type SquadLeadEvaluationInput = Omit<SquadLeadEvaluation, 'id' | 'created_at' | 'updated_at' | 'squad_lead'>

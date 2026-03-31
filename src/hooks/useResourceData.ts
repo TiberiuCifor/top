@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import type { Client, Employee, Project, Assignment, AssignmentNote, ClientInput, EmployeeInput, ProjectInput, AssignmentInput, AssignmentNoteInput, Role, RoleInput, Practice, PracticeInput, Squad, SquadInput, EmployeeProjectHistory, ProjectStakeholder, ProjectStakeholderInput, Reminder, ReminderInput, User, ProjectRagStatus, ProjectRagStatusInput, CeoDashboardEntry, CeoDashboardEntryInput, EmployeeList, EmployeeListInput, EmployeeListMember, EmployeeListComment, EmployeeListCommentInput } from '@/lib/types'
+import type { Client, Employee, Project, Assignment, AssignmentNote, ClientInput, EmployeeInput, ProjectInput, AssignmentInput, AssignmentNoteInput, Role, RoleInput, Practice, PracticeInput, Squad, SquadInput, EmployeeProjectHistory, ProjectStakeholder, ProjectStakeholderInput, Reminder, ReminderInput, User, ProjectRagStatus, ProjectRagStatusInput, CeoDashboardEntry, CeoDashboardEntryInput, EmployeeList, EmployeeListInput, EmployeeListMember, EmployeeListComment, EmployeeListCommentInput, PLEvaluation, PLEvaluationInput, ProjectLeadEvaluation, ProjectLeadEvaluationInput, SquadLeadEvaluation, SquadLeadEvaluationInput } from '@/lib/types'
 
 const PRACTICE_SELECT = '*, squads(*)'
 const SQUAD_SELECT = '*, practice:practices(*), squad_lead:employees!squads_squad_lead_id_fkey(*)'
@@ -887,4 +887,175 @@ export function useListComments(listId: string | null) {
   return useMemo(() => ({
     comments, loading, fetchComments, createComment, deleteComment, toggleReaction
   }), [comments, loading, fetchComments, createComment, deleteComment, toggleReaction])
+}
+
+const PL_EVAL_SELECT = '*, practice_lead:employees(*, role_data:roles(*), practice:practices(*))'
+
+export function usePLEvaluations() {
+  const fetchFn = useCallback(async () => {
+    const { data } = await supabase
+      .from('pl_evaluations')
+      .select(PL_EVAL_SELECT)
+      .order('month', { ascending: false })
+    return data || []
+  }, [])
+
+  const { data: evaluations, loading, doFetch: fetchEvaluations, setData: setEvaluations } = useResource<PLEvaluation>('pl_evaluations', fetchFn)
+
+  const createEvaluation = useCallback(async (input: PLEvaluationInput) => {
+    const { data, error } = await supabase
+      .from('pl_evaluations')
+      .insert(input)
+      .select(PL_EVAL_SELECT)
+      .single()
+    if (!error && data) {
+      const updated = [data, ...evaluations]
+      setEvaluations(updated)
+      setCache('pl_evaluations', updated)
+    }
+    return { data, error }
+  }, [evaluations, setEvaluations])
+
+  const updateEvaluation = useCallback(async (id: string, input: Partial<PLEvaluationInput>) => {
+    const { data, error } = await supabase
+      .from('pl_evaluations')
+      .update(input)
+      .eq('id', id)
+      .select(PL_EVAL_SELECT)
+      .single()
+    if (!error && data) {
+      const updated = evaluations.map(e => e.id === id ? data : e)
+      setEvaluations(updated)
+      setCache('pl_evaluations', updated)
+    }
+    return { data, error }
+  }, [evaluations, setEvaluations])
+
+  const deleteEvaluation = useCallback(async (id: string) => {
+    const { error } = await supabase.from('pl_evaluations').delete().eq('id', id)
+    if (!error) {
+      const updated = evaluations.filter(e => e.id !== id)
+      setEvaluations(updated)
+      setCache('pl_evaluations', updated)
+    }
+    return { error }
+  }, [evaluations, setEvaluations])
+
+  return useMemo(() => ({
+    evaluations, loading, fetchEvaluations, createEvaluation, updateEvaluation, deleteEvaluation
+  }), [evaluations, loading, fetchEvaluations, createEvaluation, updateEvaluation, deleteEvaluation])
+}
+
+const PROJECT_LEAD_EVAL_SELECT = '*, project_lead:employees(*, role_data:roles(*), practice:practices(*))'
+
+export function useProjectLeadEvaluations() {
+  const fetchFn = useCallback(async () => {
+    const { data } = await supabase
+      .from('project_lead_evaluations')
+      .select(PROJECT_LEAD_EVAL_SELECT)
+      .order('month', { ascending: false })
+    return data || []
+  }, [])
+
+  const { data: evaluations, loading, doFetch: fetchEvaluations, setData: setEvaluations } = useResource<ProjectLeadEvaluation>('project_lead_evaluations', fetchFn)
+
+  const createEvaluation = useCallback(async (input: ProjectLeadEvaluationInput) => {
+    const { data, error } = await supabase
+      .from('project_lead_evaluations')
+      .insert(input)
+      .select(PROJECT_LEAD_EVAL_SELECT)
+      .single()
+    if (!error && data) {
+      const updated = [data, ...evaluations]
+      setEvaluations(updated)
+      setCache('project_lead_evaluations', updated)
+    }
+    return { data, error }
+  }, [evaluations, setEvaluations])
+
+  const updateEvaluation = useCallback(async (id: string, input: Partial<ProjectLeadEvaluationInput>) => {
+    const { data, error } = await supabase
+      .from('project_lead_evaluations')
+      .update(input)
+      .eq('id', id)
+      .select(PROJECT_LEAD_EVAL_SELECT)
+      .single()
+    if (!error && data) {
+      const updated = evaluations.map(e => e.id === id ? data : e)
+      setEvaluations(updated)
+      setCache('project_lead_evaluations', updated)
+    }
+    return { data, error }
+  }, [evaluations, setEvaluations])
+
+  const deleteEvaluation = useCallback(async (id: string) => {
+    const { error } = await supabase.from('project_lead_evaluations').delete().eq('id', id)
+    if (!error) {
+      const updated = evaluations.filter(e => e.id !== id)
+      setEvaluations(updated)
+      setCache('project_lead_evaluations', updated)
+    }
+    return { error }
+  }, [evaluations, setEvaluations])
+
+  return useMemo(() => ({
+    evaluations, loading, fetchEvaluations, createEvaluation, updateEvaluation, deleteEvaluation
+  }), [evaluations, loading, fetchEvaluations, createEvaluation, updateEvaluation, deleteEvaluation])
+}
+
+const SQUAD_LEAD_EVAL_SELECT = '*, squad_lead:employees(*, role_data:roles(*), practice:practices(*))'
+
+export function useSquadLeadEvaluations() {
+  const fetchFn = useCallback(async () => {
+    const { data } = await supabase
+      .from('squad_lead_evaluations')
+      .select(SQUAD_LEAD_EVAL_SELECT)
+      .order('month', { ascending: false })
+    return data || []
+  }, [])
+
+  const { data: evaluations, loading, doFetch: fetchEvaluations, setData: setEvaluations } = useResource<SquadLeadEvaluation>('squad_lead_evaluations', fetchFn)
+
+  const createEvaluation = useCallback(async (input: SquadLeadEvaluationInput) => {
+    const { data, error } = await supabase
+      .from('squad_lead_evaluations')
+      .insert(input)
+      .select(SQUAD_LEAD_EVAL_SELECT)
+      .single()
+    if (!error && data) {
+      const updated = [data, ...evaluations]
+      setEvaluations(updated)
+      setCache('squad_lead_evaluations', updated)
+    }
+    return { data, error }
+  }, [evaluations, setEvaluations])
+
+  const updateEvaluation = useCallback(async (id: string, input: Partial<SquadLeadEvaluationInput>) => {
+    const { data, error } = await supabase
+      .from('squad_lead_evaluations')
+      .update(input)
+      .eq('id', id)
+      .select(SQUAD_LEAD_EVAL_SELECT)
+      .single()
+    if (!error && data) {
+      const updated = evaluations.map(e => e.id === id ? data : e)
+      setEvaluations(updated)
+      setCache('squad_lead_evaluations', updated)
+    }
+    return { data, error }
+  }, [evaluations, setEvaluations])
+
+  const deleteEvaluation = useCallback(async (id: string) => {
+    const { error } = await supabase.from('squad_lead_evaluations').delete().eq('id', id)
+    if (!error) {
+      const updated = evaluations.filter(e => e.id !== id)
+      setEvaluations(updated)
+      setCache('squad_lead_evaluations', updated)
+    }
+    return { error }
+  }, [evaluations, setEvaluations])
+
+  return useMemo(() => ({
+    evaluations, loading, fetchEvaluations, createEvaluation, updateEvaluation, deleteEvaluation
+  }), [evaluations, loading, fetchEvaluations, createEvaluation, updateEvaluation, deleteEvaluation])
 }

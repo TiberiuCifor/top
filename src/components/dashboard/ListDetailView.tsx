@@ -260,8 +260,15 @@ export function ListDetailView({
   const members = fteOnly ? allMembers.filter(m => m.employee?.contract_type === 'FTE') : allMembers
 
   const getActiveAssignment = (employeeId: string) => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
     const active = assignments
-      .filter(a => a.employee_id === employeeId && a.status === 'active')
+      .filter(a => {
+        if (a.employee_id !== employeeId || a.status !== 'active') return false
+        const start = new Date(a.start_date)
+        start.setHours(0, 0, 0, 0)
+        return start <= today
+      })
       .sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime())
     return active[0] ?? null
   }

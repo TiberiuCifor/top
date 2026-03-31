@@ -56,10 +56,16 @@ function EmployeesPageInner() {
     }
   }
 
-  const handleSaveAssignment = async (data: AssignmentInput) => {
-    const { error } = await createAssignment(data)
-    if (error) toast.error('Failed to create assignment')
-    else toast.success('Assignment created successfully')
+  const handleSaveAssignment = async (data: AssignmentInput, assignmentId?: string) => {
+    if (assignmentId) {
+      const { error } = await updateAssignment(assignmentId, data)
+      if (error) toast.error('Failed to update assignment')
+      else toast.success('Assignment updated successfully')
+    } else {
+      const { error } = await createAssignment(data)
+      if (error) toast.error('Failed to create assignment')
+      else toast.success('Assignment created successfully')
+    }
   }
 
   const handleConfirmDelete = async () => {

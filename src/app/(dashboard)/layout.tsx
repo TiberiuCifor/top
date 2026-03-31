@@ -1,18 +1,10 @@
 'use client'
-import { useState, useEffect, useMemo, memo, useCallback } from 'react'
+import { useState, useEffect, useMemo, memo, useCallback, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { DashboardProvider, useDashboard } from '@/contexts/DashboardContext'
-import { LayoutDashboard, Building2, Briefcase, Users, CalendarDays, Settings, LogOut, KeyRound, Layers, Bell, ChevronDown, ChevronRight, Activity, TrendingUp, FolderOpen, PanelLeftClose, PanelLeft, Sun, Moon, UserX, ListChecks, RefreshCw, Timer, TableProperties, History, ClipboardList, GraduationCap } from 'lucide-react'
+import { LayoutDashboard, Building2, Briefcase, Users, CalendarDays, Settings, LogOut, KeyRound, Layers, Bell, ChevronDown, ChevronRight, Activity, TrendingUp, FolderOpen, PanelLeftClose, PanelLeft, Sun, Moon, UserX, ListChecks, RefreshCw, Timer, TableProperties, History, ClipboardList, GraduationCap, PieChart } from 'lucide-react'
 import { useTheme } from 'next-themes'
 
 const PAGE_TITLES: Record<string, string> = {
@@ -31,10 +23,14 @@ const PAGE_TITLES: Record<string, string> = {
   '/projects-updates/workload': 'Workload',
   '/reminders': 'Reminders',
   '/ceo-dashboard': 'CEO Dashboard',
+  '/sales-pipeline': 'Sales Pipeline',
   '/lists': 'Lists',
   '/hiring-pipeline': 'Hiring Pipeline',
   '/trainings-certs': 'Trainings & Certs',
   '/settings': 'Settings',
+  '/evaluations/practice-leads': 'Monthly Cards — Practice Leads',
+  '/evaluations/project-leads': 'Monthly Cards — Project Leads',
+  '/evaluations/squad-leads': 'Monthly Cards — Squad Leads',
 }
 
 const PROJECTS_UPDATES_PATHS = ['/projects-updates/rag-updates', '/projects-updates/pre-sales', '/projects-updates/workload']
@@ -42,6 +38,13 @@ const PROJECTS_UPDATES_SUB_ITEMS = [
   { href: '/projects-updates/rag-updates', label: 'RAG Updates', Icon: Activity },
   { href: '/projects-updates/pre-sales', label: 'Pre-Sales Updates', Icon: RefreshCw },
   { href: '/projects-updates/workload', label: 'Workload', Icon: Timer },
+]
+
+const EVALUATIONS_PATHS = ['/evaluations/practice-leads', '/evaluations/project-leads', '/evaluations/squad-leads']
+const EVALUATIONS_SUB_ITEMS = [
+  { href: '/evaluations/practice-leads', label: 'Practice Leads', Icon: ClipboardList },
+  { href: '/evaluations/project-leads', label: 'Project Leads', Icon: ClipboardList },
+  { href: '/evaluations/squad-leads', label: 'Squad Leads', Icon: ClipboardList },
 ]
 
 const PRACTICES_PATHS = ['/practices', '/practices/activities-log', '/skills-matrix']
@@ -91,15 +94,17 @@ function isActive(pathname: string, href: string, exact = false) {
   return pathname === href || (href !== '/' && pathname.startsWith(href))
 }
 
-const Sidebar = memo(function Sidebar({ pathname, benchCount, sidebarCollapsed, isProjectLead, isItSupport, isLeadership, onToggleCollapse }: {
-  pathname: string; benchCount: number; sidebarCollapsed: boolean; isProjectLead: boolean; isItSupport: boolean; isLeadership: boolean; onToggleCollapse: () => void
+const Sidebar = memo(function Sidebar({ pathname, benchCount, sidebarCollapsed, isProjectLead, isItSupport, isLeadership, isSales, isPracticeLead, onToggleCollapse }: {
+  pathname: string; benchCount: number; sidebarCollapsed: boolean; isProjectLead: boolean; isItSupport: boolean; isLeadership: boolean; isSales: boolean; isPracticeLead: boolean; onToggleCollapse: () => void
 }) {
   const [manageOpen, setManageOpen] = useState(true)
   const [projectsUpdatesOpen, setProjectsUpdatesOpen] = useState(true)
   const [practicesOpen, setPracticesOpen] = useState(true)
+  const [evaluationsOpen, setEvaluationsOpen] = useState(true)
   const isManageTab = MANAGE_PATHS.includes(pathname)
   const isProjectsUpdatesTab = PROJECTS_UPDATES_PATHS.some(p => pathname.startsWith(p))
   const isPracticesTab = PRACTICES_PATHS.some(p => pathname.startsWith(p))
+  const isEvaluationsTab = EVALUATIONS_PATHS.some(p => pathname.startsWith(p))
 
   return (
       <aside className={`self-stretch sticky top-0 h-screen bg-card border-r border-border flex flex-col transition-[width] duration-300 z-40 flex-shrink-0 overflow-x-hidden ${sidebarCollapsed ? 'w-[68px]' : 'w-60'}`}>
@@ -258,6 +263,42 @@ const Sidebar = memo(function Sidebar({ pathname, benchCount, sidebarCollapsed, 
         {isLeadership && (
           <SidebarLink href="/ceo-dashboard" label="CEO Dashboard" icon={<TrendingUp className="w-4 h-4" />} active={isActive(pathname, '/ceo-dashboard')} collapsed={sidebarCollapsed} />
         )}
+        {(isLeadership || isSales || isPracticeLead) && (
+          <SidebarLink href="/sales-pipeline" label="Sales Pipeline" icon={<PieChart className="w-4 h-4" />} active={isActive(pathname, '/sales-pipeline')} collapsed={sidebarCollapsed} />
+        )}
+        {(isLeadership || isPracticeLead) && (() => {
+          const evalItems = isPracticeLead
+            ? EVALUATIONS_SUB_ITEMS.filter(i => i.href !== '/evaluations/project-leads')
+            : EVALUATIONS_SUB_ITEMS
+          return !sidebarCollapsed ? (
+            <div>
+              <button
+                onClick={() => setEvaluationsOpen(!evaluationsOpen)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150
+                  ${isEvaluationsTab ? 'text-[#ea2775] dark:text-[#ea2775] bg-[#ea2775]/10 dark:bg-[#ea2775]/10' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+              >
+                <span className={`flex-shrink-0 ${isEvaluationsTab ? 'text-[#ea2775]' : 'text-muted-foreground'}`}>
+                  <ClipboardList className="w-4 h-4" />
+                </span>
+                <span className="flex-1 text-left truncate">Monthly Cards</span>
+                <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 ${evaluationsOpen ? 'rotate-90' : ''}`} />
+              </button>
+              <div className={`overflow-hidden transition-all duration-200 ${evaluationsOpen ? 'max-h-40 mt-1' : 'max-h-0'}`}>
+                <div className="space-y-0.5">
+                  {evalItems.map(item => (
+                    <SidebarLink key={item.href} href={item.href} label={item.label} icon={<item.Icon className="w-4 h-4" />} indent active={isActive(pathname, item.href, true)} collapsed={sidebarCollapsed} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              {evalItems.map(item => (
+                <SidebarLink key={item.href} href={item.href} label={item.label} icon={<item.Icon className="w-4 h-4" />} active={isActive(pathname, item.href, true)} collapsed={sidebarCollapsed} />
+              ))}
+            </>
+          )
+        })()}
       </nav>
 
       <div className={`border-t border-border py-3 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
@@ -275,6 +316,77 @@ const Sidebar = memo(function Sidebar({ pathname, benchCount, sidebarCollapsed, 
     </aside>
   )
 })
+
+function UserMenu({ currentUser, router, handleLogout }: { currentUser: any; router: any; handleLogout: () => Promise<void> }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  function navigate(path: string) {
+    setOpen(false)
+    router.push(path)
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-accent transition-colors focus:outline-none"
+      >
+        <div className="w-8 h-8 rounded-full bg-[#ea2775] flex items-center justify-center text-white text-xs font-semibold shadow-sm flex-shrink-0">
+          {currentUser.full_name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
+        </div>
+        <span className="text-sm text-foreground hidden md:inline">{currentUser.full_name}</span>
+        <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-56 rounded-xl border border-border bg-card shadow-lg z-[200] overflow-hidden">
+          <div className="px-3 py-2.5 border-b border-border">
+            <p className="text-sm font-semibold text-foreground">{currentUser.full_name}</p>
+            <p className="text-xs text-muted-foreground truncate">{currentUser.email}</p>
+          </div>
+          <div className="p-1">
+            {currentUser.role === 'admin' && (
+              <button onClick={() => navigate('/users')} className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg hover:bg-accent text-foreground transition-colors text-left">
+                <Users className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                Users
+              </button>
+            )}
+            <button onClick={() => navigate('/settings')} className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg hover:bg-accent text-foreground transition-colors text-left">
+              <Settings className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              Settings
+            </button>
+            <button onClick={() => navigate('/auth/change-password')} className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg hover:bg-accent text-foreground transition-colors text-left">
+              <KeyRound className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              Change Password
+            </button>
+          </div>
+          <div className="p-1 border-t border-border">
+            <button
+              onClick={() => { setOpen(false); handleLogout() }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 text-destructive transition-colors text-left"
+            >
+              <LogOut className="w-4 h-4 flex-shrink-0" />
+              Disconnect
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 const Header = memo(function Header({ pathname, currentUser, newRemindersCount, handleLogout }: {
   pathname: string; currentUser: any; newRemindersCount: number; handleLogout: () => Promise<void>
@@ -295,6 +407,8 @@ const Header = memo(function Header({ pathname, currentUser, newRemindersCount, 
       ? (PAGE_TITLES[pathname] || 'Practices')
       : pathname.startsWith('/trainings-certs/')
       ? 'Trainings & Certs'
+      : pathname.startsWith('/evaluations/')
+      ? (PAGE_TITLES[pathname] || 'Evaluations')
       : PAGE_TITLES[pathname] || 'Dashboard'
 
   return (
@@ -334,47 +448,7 @@ const Header = memo(function Header({ pathname, currentUser, newRemindersCount, 
         <div className="w-px h-6 bg-border mx-1" />
 
         {currentUser && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-auto px-3 py-2 hover:bg-accent flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-[#ea2775] flex items-center justify-center text-white text-xs font-semibold shadow-sm">
-                  {currentUser.full_name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
-                </div>
-                <span className="text-sm text-foreground hidden md:inline">
-                  {currentUser.full_name}
-                </span>
-                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel className="font-normal">
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">{currentUser.full_name}</p>
-                  <p className="text-xs text-muted-foreground">{currentUser.email}</p>
-                </div>
-              </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {currentUser.role === 'admin' && (
-                  <DropdownMenuItem onClick={() => router.push('/users')}>
-                    <Settings className="w-4 h-4 mr-2" />
-                    Users
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onClick={() => router.push('/settings')}>
-                  <Settings className="w-4 h-4 mr-2" />
-                  Settings
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => router.push('/auth/change-password')}>
-                  <KeyRound className="w-4 h-4 mr-2" />
-                  Change Password
-                </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
-                <LogOut className="w-4 h-4 mr-2" />
-                Disconnect
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <UserMenu currentUser={currentUser} router={router} handleLogout={handleLogout} />
         )}
       </div>
     </header>
@@ -382,7 +456,7 @@ const Header = memo(function Header({ pathname, currentUser, newRemindersCount, 
 })
 
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
-  const { currentUser, isProjectLead, isItSupport, isLeadership, newRemindersCount, benchCount, handleLogout, ready } = useDashboard()
+  const { currentUser, isProjectLead, isItSupport, isLeadership, isSales, isPracticeLead, newRemindersCount, benchCount, handleLogout, ready } = useDashboard()
   const pathname = usePathname()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
@@ -408,6 +482,8 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         isProjectLead={isProjectLead}
         isItSupport={isItSupport}
         isLeadership={isLeadership}
+        isSales={isSales}
+        isPracticeLead={isPracticeLead}
         onToggleCollapse={toggleCollapse}
       />
 
